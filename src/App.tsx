@@ -3,13 +3,14 @@ import { blink } from './blink/client'
 import { Dashboard } from './components/Dashboard'
 import { TasksPage } from './components/TasksPage'
 import { ProjectsPage } from './components/ProjectsPage'
+import { TeamPage } from './components/TeamPage'
 import { SettingsPage } from './components/SettingsPage'
 import { ProfilePage } from './components/ProfilePage'
 import { Sidebar } from './components/Sidebar'
 import { Header } from './components/Header'
 import { Toaster } from './components/ui/toaster'
 
-type Page = 'dashboard' | 'tasks' | 'projects' | 'settings' | 'profile'
+type Page = 'dashboard' | 'tasks' | 'projects' | 'team' | 'settings' | 'profile'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -73,6 +74,8 @@ function App() {
         return <TasksPage />
       case 'projects':
         return <ProjectsPage />
+      case 'team':
+        return <TeamPage />
       case 'settings':
         return <SettingsPage />
       case 'profile':

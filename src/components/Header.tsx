@@ -11,6 +11,7 @@ import {
 } from './ui/dropdown-menu'
 import { useState } from 'react'
 import { blink } from '../blink/client'
+import { NotificationCenter } from './NotificationCenter'
 
 interface HeaderProps {
   user: any
@@ -63,9 +64,7 @@ export function Header({ user }: HeaderProps) {
           </Button>
 
           {/* Notifications */}
-          <Button variant="ghost" size="sm" className="w-9 h-9 p-0">
-            <Bell className="w-4 h-4" />
-          </Button>
+          <NotificationCenter />
 
           {/* User Menu */}
           <DropdownMenu>

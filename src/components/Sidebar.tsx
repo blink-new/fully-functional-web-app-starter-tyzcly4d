@@ -4,12 +4,13 @@ import {
   FolderOpen, 
   Settings, 
   User,
+  Users,
   Plus
 } from 'lucide-react'
 import { Button } from './ui/button'
 import { cn } from '../lib/utils'
 
-type Page = 'dashboard' | 'tasks' | 'projects' | 'settings' | 'profile'
+type Page = 'dashboard' | 'tasks' | 'projects' | 'team' | 'settings' | 'profile'
 
 interface SidebarProps {
   currentPage: Page
@@ -20,6 +21,7 @@ const navigation = [
   { id: 'dashboard' as Page, label: 'Dashboard', icon: LayoutDashboard },
   { id: 'tasks' as Page, label: 'Tasks', icon: CheckSquare },
   { id: 'projects' as Page, label: 'Projects', icon: FolderOpen },
+  { id: 'team' as Page, label: 'Team', icon: Users },
   { id: 'settings' as Page, label: 'Settings', icon: Settings },
   { id: 'profile' as Page, label: 'Profile', icon: User },
 ]

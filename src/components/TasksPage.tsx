@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Badge } from './ui/badge'
+import { Avatar, AvatarFallback } from './ui/avatar'
 import { 
   Plus, 
   Search, 
@@ -11,7 +12,8 @@ import {
   Calendar,
   CheckSquare,
   Clock,
-  AlertCircle
+  AlertCircle,
+  User
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -33,6 +35,8 @@ interface Task {
   due_date?: string
   project_id?: string
   user_id: string
+  assignee_id?: string
+  assignee_email?: string
   created_at: string
   updated_at: string
 }
@@ -50,8 +54,15 @@ export function TasksPage() {
   const loadTasks = useCallback(async () => {
     try {
       const user = await blink.auth.me()
+      
+      // Load tasks created by user OR assigned to user
       const allTasks = await blink.db.tasks.list({
-        where: { user_id: user.id },
+        where: {
+          OR: [
+            { user_id: user.id },
+            { assignee_id: user.id }
+          ]
+        },
         orderBy: { created_at: 'desc' }
       })
       setTasks(allTasks)
@@ -83,14 +94,55 @@ export function TasksPage() {
         due_date: taskData.due_date || null,
         project_id: taskData.project_id || null,
         user_id: user.id,
+        assignee_id: taskData.assignee_id || null,
+        assignee_email: taskData.assignee_email || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
       
       setTasks(prev => [newTask, ...prev])
+
+      // Send notification if task is assigned to someone
+      if (taskData.assignee_id && taskData.assignee_id !== user.id) {
+        await blink.db.notifications.create({
+          user_id: taskData.assignee_id,
+          type: 'task_assigned',
+          title: 'New Task Assigned',
+          message: `${user.email} assigned you a task: "${taskData.title}"`,
+          data: JSON.stringify({ task_id: newTask.id, assigner: user.email })
+        })
+
+        // Send email notification
+        if (taskData.assignee_email) {
+          await blink.notifications.email({
+            to: taskData.assignee_email,
+            subject: `New Task Assigned: ${taskData.title}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #2563eb;">New Task Assigned</h2>
+                <p><strong>${user.email}</strong> has assigned you a new task:</p>
+                <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                  <h3 style="margin: 0 0 8px 0;">${taskData.title}</h3>
+                  ${taskData.description ? `<p style="margin: 0; color: #666;">${taskData.description}</p>` : ''}
+                  <p style="margin: 8px 0 0 0; font-size: 14px;">
+                    <strong>Priority:</strong> ${taskData.priority || 'medium'} | 
+                    <strong>Status:</strong> ${taskData.status || 'todo'}
+                    ${taskData.due_date ? ` | <strong>Due:</strong> ${taskData.due_date}` : ''}
+                  </p>
+                </div>
+                <p><a href="https://fully-functional-web-app-starter-tyzcly4d.sites.blink.new" style="color: #2563eb;">View in TaskFlow</a></p>
+              </div>
+            `,
+            text: `${user.email} has assigned you a new task: "${taskData.title}". View it in TaskFlow.`
+          })
+        }
+      }
+      
       toast({
         title: "Success",
-        description: "Task created successfully!",
+        description: taskData.assignee_email ? 
+          `Task created and assigned to ${taskData.assignee_email}` : 
+          "Task created successfully!",
       })
     } catch (error) {
       console.error('Failed to create task:', error)
@@ -104,6 +156,9 @@ export function TasksPage() {
 
   const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
     try {
+      const user = await blink.auth.me()
+      const originalTask = tasks.find(t => t.id === taskId)
+      
       await blink.db.tasks.update(taskId, {
         ...updates,
         updated_at: new Date().toISOString()
@@ -112,6 +167,38 @@ export function TasksPage() {
       setTasks(prev => prev.map(task => 
         task.id === taskId ? { ...task, ...updates } : task
       ))
+
+      // Check if task was completed and notify the creator
+      if (updates.status === 'done' && originalTask?.status !== 'done' && 
+          originalTask?.user_id && originalTask.user_id !== user.id) {
+        
+        await blink.db.notifications.create({
+          user_id: originalTask.user_id,
+          type: 'task_completed',
+          title: 'Task Completed',
+          message: `${user.email} completed the task: "${originalTask.title}"`,
+          data: JSON.stringify({ task_id: taskId, completer: user.email })
+        })
+
+        // Send email notification to task creator
+        const creator = await blink.auth.me() // This would need to be the creator's info
+        await blink.notifications.email({
+          to: originalTask.user_id, // This should be creator's email
+          subject: `Task Completed: ${originalTask.title}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #22c55e;">Task Completed! ✅</h2>
+              <p><strong>${user.email}</strong> has completed the task:</p>
+              <div style="background: #f0fdf4; padding: 16px; border-radius: 8px; margin: 16px 0; border-left: 4px solid #22c55e;">
+                <h3 style="margin: 0 0 8px 0;">${originalTask.title}</h3>
+                ${originalTask.description ? `<p style="margin: 0; color: #666;">${originalTask.description}</p>` : ''}
+              </div>
+              <p><a href="https://fully-functional-web-app-starter-tyzcly4d.sites.blink.new" style="color: #2563eb;">View in TaskFlow</a></p>
+            </div>
+          `,
+          text: `${user.email} has completed the task: "${originalTask.title}". View it in TaskFlow.`
+        })
+      }
       
       toast({
         title: "Success",
@@ -327,6 +414,16 @@ export function TasksPage() {
                         <span className="flex items-center">
                           <Calendar className="w-3 h-3 mr-1" />
                           Due {format(new Date(task.due_date), 'MMM d, yyyy')}
+                        </span>
+                      )}
+                      {task.assignee_email && (
+                        <span className="flex items-center">
+                          <Avatar className="w-4 h-4 mr-1">
+                            <AvatarFallback className="text-xs">
+                              {task.assignee_email.charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span>Assigned to {task.assignee_email.split('@')[0]}</span>
                         </span>
                       )}
                     </div>

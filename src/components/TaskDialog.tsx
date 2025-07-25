@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { blink } from '../blink/client'
 import {
   Dialog,
   DialogContent,
@@ -16,6 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select'
+import { Avatar, AvatarFallback } from './ui/avatar'
+import { User } from 'lucide-react'
 
 interface Task {
   id: string
@@ -26,8 +29,16 @@ interface Task {
   due_date?: string
   project_id?: string
   user_id: string
+  assignee_id?: string
+  assignee_email?: string
   created_at: string
   updated_at: string
+}
+
+interface TeamMember {
+  id: string
+  email: string
+  display_name?: string
 }
 
 interface TaskDialogProps {
@@ -43,7 +54,56 @@ export function TaskDialog({ open, onOpenChange, task, onSave }: TaskDialogProps
   const [status, setStatus] = useState<Task['status']>('todo')
   const [priority, setPriority] = useState<Task['priority']>('medium')
   const [dueDate, setDueDate] = useState('')
+  const [assigneeId, setAssigneeId] = useState<string>('')
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(false)
+
+  const loadTeamMembers = useCallback(async () => {
+    try {
+      const user = await blink.auth.me()
+      
+      // Load accepted connections to get team members
+      const connections = await blink.db.user_connections.list({
+        where: {
+          AND: [
+            {
+              OR: [
+                { requester_id: user.id },
+                { recipient_id: user.id }
+              ]
+            },
+            { status: 'accepted' }
+          ]
+        }
+      })
+
+      const members: TeamMember[] = []
+      
+      for (const conn of connections) {
+        const memberId = conn.requester_id === user.id ? conn.recipient_id : conn.requester_id
+        const memberEmail = conn.requester_id === user.id ? conn.recipient_email : conn.requester_email
+        
+        if (memberId && memberEmail) {
+          members.push({
+            id: memberId,
+            email: memberEmail,
+            display_name: memberEmail.split('@')[0]
+          })
+        }
+      }
+      
+      setTeamMembers(members)
+
+    } catch (error) {
+      console.error('Error loading team members:', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (open) {
+      loadTeamMembers()
+    }
+  }, [open, loadTeamMembers])
 
   useEffect(() => {
     if (task) {
@@ -52,12 +112,14 @@ export function TaskDialog({ open, onOpenChange, task, onSave }: TaskDialogProps
       setStatus(task.status)
       setPriority(task.priority)
       setDueDate(task.due_date ? task.due_date.split('T')[0] : '')
+      setAssigneeId(task.assignee_id || '')
     } else {
       setTitle('')
       setDescription('')
       setStatus('todo')
       setPriority('medium')
       setDueDate('')
+      setAssigneeId('')
     }
   }, [task, open])
 
@@ -66,12 +128,16 @@ export function TaskDialog({ open, onOpenChange, task, onSave }: TaskDialogProps
 
     setLoading(true)
     try {
+      const assignee = teamMembers.find(member => member.id === assigneeId)
+      
       await onSave({
         title: title.trim(),
         description: description.trim() || undefined,
         status,
         priority,
         due_date: dueDate || undefined,
+        assignee_id: assigneeId || undefined,
+        assignee_email: assignee?.email || undefined,
       })
       onOpenChange(false)
     } catch (error) {
@@ -112,6 +178,50 @@ export function TaskDialog({ open, onOpenChange, task, onSave }: TaskDialogProps
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
             />
+          </div>
+
+          {/* Assignee */}
+          <div className="space-y-2">
+            <Label>Assign To</Label>
+            <Select value={assigneeId} onValueChange={setAssigneeId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select team member (optional)">
+                  {assigneeId && (
+                    <div className="flex items-center space-x-2">
+                      <Avatar className="h-5 w-5">
+                        <AvatarFallback className="text-xs">
+                          {teamMembers.find(m => m.id === assigneeId)?.email?.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span>{teamMembers.find(m => m.id === assigneeId)?.display_name}</span>
+                    </div>
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">
+                  <div className="flex items-center space-x-2">
+                    <User className="h-4 w-4" />
+                    <span>Unassigned</span>
+                  </div>
+                </SelectItem>
+                {teamMembers.map((member) => (
+                  <SelectItem key={member.id} value={member.id}>
+                    <div className="flex items-center space-x-2">
+                      <Avatar className="h-5 w-5">
+                        <AvatarFallback className="text-xs">
+                          {member.email.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col">
+                        <span>{member.display_name}</span>
+                        <span className="text-xs text-muted-foreground">{member.email}</span>
+                      </div>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Status and Priority */}
